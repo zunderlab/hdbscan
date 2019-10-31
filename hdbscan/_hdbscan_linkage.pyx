@@ -166,11 +166,16 @@ cdef class UnionFind (object):
     cdef np.intp_t *parent
     cdef np.intp_t *size
 
-    def __init__(self, N):
+    def __init__(self, N, sample_weights):
         self.parent_arr = -1 * np.ones(2 * N - 1, dtype=np.intp, order='C')
         self.next_label = N
-        self.size_arr = np.hstack((np.ones(N, dtype=np.intp),
-                                   np.zeros(N-1, dtype=np.intp)))
+        # Initialise size array with sample_weights if given
+        if sample_weights is not None:
+            self.size_arr = np.hstack((sample_weights,
+                                       np.zeros(N-1, dtype=np.intp)))
+        else:
+            self.size_arr = np.hstack((np.ones(N, dtype=np.intp),
+                                       np.zeros(N-1, dtype=np.intp)))
         self.parent = (<np.intp_t *> self.parent_arr.data)
         self.size = (<np.intp_t *> self.size_arr.data)
 
@@ -194,7 +199,8 @@ cdef class UnionFind (object):
         return n
 
 
-cpdef np.ndarray[np.double_t, ndim=2] label(np.ndarray[np.double_t, ndim=2] L):
+cpdef np.ndarray[np.double_t, ndim=2] label(
+        np.ndarray[np.double_t, ndim=2] L, sample_weights=None):
 
     cdef np.ndarray[np.double_t, ndim=2] result_arr
     cdef np.double_t[:, ::1] result
@@ -206,7 +212,7 @@ cpdef np.ndarray[np.double_t, ndim=2] label(np.ndarray[np.double_t, ndim=2] L):
     result = (<np.double_t[:L.shape[0], :4:1]> (
         <np.double_t *> result_arr.data))
     N = L.shape[0] + 1
-    U = UnionFind(N)
+    U = UnionFind(N, sample_weights)
 
     for index in range(L.shape[0]):
 
@@ -226,7 +232,8 @@ cpdef np.ndarray[np.double_t, ndim=2] label(np.ndarray[np.double_t, ndim=2] L):
     return result_arr
 
 
-cpdef np.ndarray[np.double_t, ndim=2] single_linkage(distance_matrix):
+cpdef np.ndarray[np.double_t, ndim=2] single_linkage(
+        distance_matrix, sample_weights=None):
 
     cdef np.ndarray[np.double_t, ndim=2] hierarchy
     cdef np.ndarray[np.double_t, ndim=2] for_labelling
@@ -234,4 +241,4 @@ cpdef np.ndarray[np.double_t, ndim=2] single_linkage(distance_matrix):
     hierarchy = mst_linkage_core(distance_matrix)
     for_labelling = hierarchy[np.argsort(hierarchy.T[2]), :]
 
-    return label(for_labelling)
+    return label(for_labelling, sample_weights)
