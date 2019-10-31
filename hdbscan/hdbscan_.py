@@ -13,7 +13,7 @@ from sklearn.neighbors import KDTree, BallTree
 from joblib import Memory
 import six
 from warnings import warn
-from sklearn.utils import check_array
+from sklearn.utils import check_array, check_consistent_length
 from joblib.parallel import cpu_count
 
 from scipy.sparse import csgraph
@@ -65,8 +65,9 @@ def _tree_to_labels(X, single_linkage_tree, min_cluster_size=10,
             single_linkage_tree)
 
 
-def _hdbscan_generic(X, min_samples=5, alpha=1.0, metric='minkowski', p=2,
-                     leaf_size=None, gen_min_span_tree=False, **kwargs):
+def _hdbscan_generic(X, sample_weights=None, min_samples=5, alpha=1.0,
+                     metric='minkowski', p=2, leaf_size=None,
+                     gen_min_span_tree=False, **kwargs):
     if metric == 'minkowski':
         distance_matrix = pairwise_distances(X, metric=metric, p=p)
     elif metric == 'arccos':
@@ -83,10 +84,10 @@ def _hdbscan_generic(X, min_samples=5, alpha=1.0, metric='minkowski', p=2,
 
     if issparse(distance_matrix):
         # raise TypeError('Sparse distance matrices not yet supported')
-        return _hdbscan_sparse_distance_matrix(distance_matrix, min_samples,
-                                               alpha, metric, p,
-                                               leaf_size, gen_min_span_tree,
-                                               **kwargs)
+        return _hdbscan_sparse_distance_matrix(
+                                               distance_matrix, sample_weights=sample_weights,
+                                               min_samples=min_samples, alpha=alpha, metric=metric, p=p,
+                                               leaf_size=leaf_size, gen_min_span_tree=gen_min_span_tree, **kwargs)
 
     mutual_reachability_ = mutual_reachability(distance_matrix,
                                                min_samples, alpha)
@@ -118,16 +119,15 @@ def _hdbscan_generic(X, min_samples=5, alpha=1.0, metric='minkowski', p=2,
         result_min_span_tree = None
 
     # Sort edges of the min_spanning_tree by weight
-    min_spanning_tree = min_spanning_tree[np.argsort(min_spanning_tree.T[2]),
-                        :]
+    min_spanning_tree = min_spanning_tree[np.argsort(min_spanning_tree.T[2]), :]
 
     # Convert edge list into standard hierarchical clustering format
-    single_linkage_tree = label(min_spanning_tree)
+    single_linkage_tree = label(min_spanning_tree, sample_weights)
 
     return single_linkage_tree, result_min_span_tree
 
 
-def _hdbscan_sparse_distance_matrix(X, min_samples=5, alpha=1.0,
+def _hdbscan_sparse_distance_matrix(X, sample_weights=None, min_samples=5, alpha=1.0,
                                     metric='minkowski', p=2, leaf_size=40,
                                     gen_min_span_tree=False, **kwargs):
     assert issparse(X)
@@ -169,11 +169,10 @@ def _hdbscan_sparse_distance_matrix(X, min_samples=5, alpha=1.0,
     min_spanning_tree = np.vstack(nonzeros + (nonzero_vals,)).T
 
     # Sort edges of the min_spanning_tree by weight
-    min_spanning_tree = min_spanning_tree[np.argsort(min_spanning_tree.T[2]),
-                        :][0]
+    min_spanning_tree = min_spanning_tree[np.argsort(min_spanning_tree.T[2]), :][0]
 
     # Convert edge list into standard hierarchical clustering format
-    single_linkage_tree = label(min_spanning_tree)
+    single_linkage_tree = label(min_spanning_tree, sample_weights)
 
     if gen_min_span_tree:
         return single_linkage_tree, min_spanning_tree
@@ -181,7 +180,7 @@ def _hdbscan_sparse_distance_matrix(X, min_samples=5, alpha=1.0,
         return single_linkage_tree, None
 
 
-def _hdbscan_prims_kdtree(X, min_samples=5, alpha=1.0,
+def _hdbscan_prims_kdtree(X, sample_weights=None, min_samples=5, alpha=1.0,
                           metric='minkowski', p=2, leaf_size=40,
                           gen_min_span_tree=False, **kwargs):
     if X.dtype != np.float64:
@@ -205,11 +204,10 @@ def _hdbscan_prims_kdtree(X, min_samples=5, alpha=1.0,
                                                 alpha)
 
     # Sort edges of the min_spanning_tree by weight
-    min_spanning_tree = min_spanning_tree[np.argsort(min_spanning_tree.T[2]),
-                        :]
+    min_spanning_tree = min_spanning_tree[np.argsort(min_spanning_tree.T[2]), :]
 
     # Convert edge list into standard hierarchical clustering format
-    single_linkage_tree = label(min_spanning_tree)
+    single_linkage_tree = label(min_spanning_tree, sample_weights)
          
     if gen_min_span_tree:
         warn('Cannot generate Minimum Spanning Tree; ' 
@@ -219,7 +217,7 @@ def _hdbscan_prims_kdtree(X, min_samples=5, alpha=1.0,
     return single_linkage_tree, None
 
 
-def _hdbscan_prims_balltree(X, min_samples=5, alpha=1.0,
+def _hdbscan_prims_balltree(X, sample_weights=None, min_samples=5, alpha=1.0,
                             metric='minkowski', p=2, leaf_size=40,
                             gen_min_span_tree=False, **kwargs):
     if X.dtype != np.float64:
@@ -242,10 +240,9 @@ def _hdbscan_prims_balltree(X, min_samples=5, alpha=1.0,
     min_spanning_tree = mst_linkage_core_vector(X, core_distances, dist_metric,
                                                 alpha)
     # Sort edges of the min_spanning_tree by weight
-    min_spanning_tree = min_spanning_tree[np.argsort(min_spanning_tree.T[2]),
-                        :]
+    min_spanning_tree = min_spanning_tree[np.argsort(min_spanning_tree.T[2]), :]
     # Convert edge list into standard hierarchical clustering format
-    single_linkage_tree = label(min_spanning_tree)
+    single_linkage_tree = label(min_spanning_tree, sample_weights)
     
     if gen_min_span_tree:
         warn('Cannot generate Minimum Spanning Tree; ' 
@@ -255,7 +252,7 @@ def _hdbscan_prims_balltree(X, min_samples=5, alpha=1.0,
     return single_linkage_tree, None
 
 
-def _hdbscan_boruvka_kdtree(X, min_samples=5, alpha=1.0,
+def _hdbscan_boruvka_kdtree(X, sample_weights=None, min_samples=5, alpha=1.0,
                             metric='minkowski', p=2, leaf_size=40,
                             approx_min_span_tree=True,
                             gen_min_span_tree=False,
@@ -266,11 +263,14 @@ def _hdbscan_boruvka_kdtree(X, min_samples=5, alpha=1.0,
     if core_dist_n_jobs < 1:
         core_dist_n_jobs = max(cpu_count() + 1 + core_dist_n_jobs, 1)
 
+    # TODO: What about np.float32 if someone doesn't need 64 bits of precision?
+    # Shouldn't np.issubdtype(X.dtype, np.float) be used?     
     if X.dtype != np.float64:
         X = X.astype(np.float64)
 
     tree = KDTree(X, metric=metric, leaf_size=leaf_size, **kwargs)
-    alg = KDTreeBoruvkaAlgorithm(tree, min_samples, metric=metric,
+    alg = KDTreeBoruvkaAlgorithm(tree, sample_weights=sample_weights,
+                                 min_samples=min_samples, metric=metric,
                                  leaf_size=leaf_size // 3,
                                  approx_min_span_tree=approx_min_span_tree,
                                  n_jobs=core_dist_n_jobs, **kwargs)
@@ -279,7 +279,7 @@ def _hdbscan_boruvka_kdtree(X, min_samples=5, alpha=1.0,
     row_order = np.argsort(min_spanning_tree.T[2])
     min_spanning_tree = min_spanning_tree[row_order, :]
     # Convert edge list into standard hierarchical clustering format
-    single_linkage_tree = label(min_spanning_tree)
+    single_linkage_tree = label(min_spanning_tree, sample_weights)
 
     if gen_min_span_tree:
         return single_linkage_tree, min_spanning_tree
@@ -287,7 +287,7 @@ def _hdbscan_boruvka_kdtree(X, min_samples=5, alpha=1.0,
         return single_linkage_tree, None
 
 
-def _hdbscan_boruvka_balltree(X, min_samples=5, alpha=1.0,
+def _hdbscan_boruvka_balltree(X, sample_weights=None, min_samples=5, alpha=1.0,
                               metric='minkowski', p=2, leaf_size=40,
                               approx_min_span_tree=True,
                               gen_min_span_tree=False,
@@ -302,16 +302,17 @@ def _hdbscan_boruvka_balltree(X, min_samples=5, alpha=1.0,
         X = X.astype(np.float64)
 
     tree = BallTree(X, metric=metric, leaf_size=leaf_size, **kwargs)
-    alg = BallTreeBoruvkaAlgorithm(tree, min_samples, metric=metric,
+    alg = BallTreeBoruvkaAlgorithm(tree, sample_weights=sample_weights,
+                                   min_samples=min_samples, metric=metric,
                                    leaf_size=leaf_size // 3,
                                    approx_min_span_tree=approx_min_span_tree,
                                    n_jobs=core_dist_n_jobs, **kwargs)
     min_spanning_tree = alg.spanning_tree()
     # Sort edges of the min_spanning_tree by weight
-    min_spanning_tree = min_spanning_tree[np.argsort(min_spanning_tree.T[2]),
-                        :]
+    row_order = np.argsort(min_spanning_tree.T[2])
+    min_spanning_tree = min_spanning_tree[row_order, :]
     # Convert edge list into standard hierarchical clustering format
-    single_linkage_tree = label(min_spanning_tree)
+    single_linkage_tree = label(min_spanning_tree, sample_weights)
 
     if gen_min_span_tree:
         return single_linkage_tree, min_spanning_tree
@@ -327,7 +328,7 @@ def check_precomputed_distance_matrix(X):
     check_array(tmp)
 
 
-def hdbscan(X, min_cluster_size=5, min_samples=None, alpha=1.0,
+def hdbscan(X, sample_weights=None, min_cluster_size=5, min_samples=None, alpha=1.0,
             metric='minkowski', p=2, leaf_size=40,
             algorithm='best', memory=Memory(cachedir=None, verbose=0),
             approx_min_span_tree=True, gen_min_span_tree=False,
@@ -532,44 +533,45 @@ def hdbscan(X, min_cluster_size=5, min_samples=None, alpha=1.0,
         if algorithm == 'generic':
             (single_linkage_tree,
              result_min_span_tree) = memory.cache(
-                _hdbscan_generic)(X, min_samples, alpha, metric,
-                                  p, leaf_size, gen_min_span_tree, **kwargs)
+                _hdbscan_generic)(X, sample_weights=sample_weights, min_samples=min_samples,
+                                  alpha=alpha, metric=metric, p=p, leaf_size=leaf_size,
+                                  gen_min_span_tree=gen_min_span_tree, **kwargs)
         elif algorithm == 'prims_kdtree':
             if metric not in KDTree.valid_metrics:
                 raise ValueError("Cannot use Prim's with KDTree for this"
                                  " metric!")
             (single_linkage_tree, result_min_span_tree) = memory.cache(
-                _hdbscan_prims_kdtree)(X, min_samples, alpha,
-                                       metric, p, leaf_size,
-                                       gen_min_span_tree, **kwargs)
+                _hdbscan_prims_kdtree)(X, sample_weights=sample_weights, min_samples=min_samples,
+                                       alpha=alpha, metric=metric, p=p, leaf_size=leaf_size,
+                                       gen_min_span_tree=gen_min_span_tree, **kwargs)
         elif algorithm == 'prims_balltree':
             if metric not in BallTree.valid_metrics:
                 raise ValueError("Cannot use Prim's with BallTree for this"
                                  " metric!")
             (single_linkage_tree, result_min_span_tree) = memory.cache(
-                _hdbscan_prims_balltree)(X, min_samples, alpha,
-                                         metric, p, leaf_size,
-                                         gen_min_span_tree, **kwargs)
+                _hdbscan_prims_balltree)(X, sample_weights=sample_weights, min_samples=min_samples,
+                                         alpha=alpha, metric=metric, p=p, leaf_size=leaf_size,
+                                         gen_min_span_tree=gen_min_span_tree, **kwargs)
         elif algorithm == 'boruvka_kdtree':
             if metric not in BallTree.valid_metrics:
                 raise ValueError("Cannot use Boruvka with KDTree for this"
                                  " metric!")
             (single_linkage_tree, result_min_span_tree) = memory.cache(
-                _hdbscan_boruvka_kdtree)(X, min_samples, alpha,
-                                         metric, p, leaf_size,
-                                         approx_min_span_tree,
-                                         gen_min_span_tree,
-                                         core_dist_n_jobs, **kwargs)
+                _hdbscan_boruvka_kdtree)(X, sample_weights=sample_weights, min_samples=min_samples,
+                                         alpha=alpha, metric=metric, p=p, leaf_size=leaf_size,
+                                         approx_min_span_tree=approx_min_span_tree,
+                                         gen_min_span_tree=gen_min_span_tree,
+                                         core_dist_n_jobs=core_dist_n_jobs, **kwargs)
         elif algorithm == 'boruvka_balltree':
             if metric not in BallTree.valid_metrics:
                 raise ValueError("Cannot use Boruvka with BallTree for this"
                                  " metric!")
             (single_linkage_tree, result_min_span_tree) = memory.cache(
-                _hdbscan_boruvka_balltree)(X, min_samples, alpha,
-                                           metric, p, leaf_size,
-                                           approx_min_span_tree,
-                                           gen_min_span_tree,
-                                           core_dist_n_jobs, **kwargs)
+                _hdbscan_boruvka_balltree)(X, sample_weights=sample_weights, min_samples=min_samples,
+                                           alpha=alpha, metric=metric, p=p, leaf_size=leaf_size,
+                                           approx_min_span_tree=approx_min_span_tree,
+                                           gen_min_span_tree=gen_min_span_tree,
+                                           core_dist_n_jobs=core_dist_n_jobs, **kwargs)
         else:
             raise TypeError('Unknown algorithm type %s specified' % algorithm)
     else:
@@ -577,39 +579,39 @@ def hdbscan(X, min_cluster_size=5, min_samples=None, alpha=1.0,
         if issparse(X) or metric not in FAST_METRICS:
             # We can't do much with sparse matrices ...
             (single_linkage_tree, result_min_span_tree) = memory.cache(
-                _hdbscan_generic)(X, min_samples,
-                                  alpha, metric, p, leaf_size,
-                                  gen_min_span_tree, **kwargs)
+                _hdbscan_generic)(X, sample_weights=sample_weights, min_samples=min_samples,
+                                  alpha=alpha, metric=metric, p=p, leaf_size=leaf_size,
+                                  gen_min_span_tree=gen_min_span_tree, **kwargs)
         elif metric in KDTree.valid_metrics:
             # TO DO: Need heuristic to decide when to go to boruvka;
             # still debugging for now
             if X.shape[1] > 60:
                 (single_linkage_tree, result_min_span_tree) = memory.cache(
-                    _hdbscan_prims_kdtree)(X, min_samples, alpha,
-                                           metric, p, leaf_size,
-                                           gen_min_span_tree, **kwargs)
+                    _hdbscan_prims_kdtree)(X, sample_weights=sample_weights, min_samples=min_samples,
+                                           alpha=alpha, metric=metric, p=p, leaf_size=leaf_size,
+                                           gen_min_span_tree=gen_min_span_tree, **kwargs)
             else:
                 (single_linkage_tree, result_min_span_tree) = memory.cache(
-                    _hdbscan_boruvka_kdtree)(X, min_samples, alpha,
-                                             metric, p, leaf_size,
-                                             approx_min_span_tree,
-                                             gen_min_span_tree,
-                                             core_dist_n_jobs, **kwargs)
+                    _hdbscan_boruvka_kdtree)(X, sample_weights=sample_weights, min_samples=min_samples,
+                                             alpha=alpha, metric=metric, p=p, leaf_size=leaf_size,
+                                             approx_min_span_tree=approx_min_span_tree,
+                                             gen_min_span_tree=gen_min_span_tree,
+                                             core_dist_n_jobs=core_dist_n_jobs, **kwargs)
         else:  # Metric is a valid BallTree metric
             # TO DO: Need heuristic to decide when to go to boruvka;
             # still debugging for now
             if X.shape[1] > 60:
                 (single_linkage_tree, result_min_span_tree) = memory.cache(
-                    _hdbscan_prims_balltree)(X, min_samples, alpha,
-                                             metric, p, leaf_size,
-                                             gen_min_span_tree, **kwargs)
+                    _hdbscan_prims_balltree)(X, sample_weights=sample_weights, min_samples=min_samples,
+                                             alpha=alpha, metric=metric, p=p, leaf_size=leaf_size,
+                                             gen_min_span_tree=gen_min_span_tree, **kwargs)
             else:
                 (single_linkage_tree, result_min_span_tree) = memory.cache(
-                    _hdbscan_boruvka_balltree)(X, min_samples, alpha,
-                                               metric, p, leaf_size,
-                                               approx_min_span_tree,
-                                               gen_min_span_tree,
-                                               core_dist_n_jobs, **kwargs)
+                    _hdbscan_boruvka_balltree)(X, sample_weights=sample_weights, min_samples=min_samples,
+                                               alpha=alpha, metric=metric, p=p, leaf_size=leaf_size,
+                                               approx_min_span_tree=approx_min_span_tree,
+                                               gen_min_span_tree=gen_min_span_tree,
+                                               core_dist_n_jobs=core_dist_n_jobs, **kwargs)
 
     return _tree_to_labels(X,
                            single_linkage_tree,
@@ -815,7 +817,7 @@ class HDBSCAN(BaseEstimator, ClusterMixin):
 
     """
 
-    def __init__(self, min_cluster_size=5, min_samples=None,
+    def __init__(self, min_samples=None, min_cluster_size=5,
                  metric='euclidean', alpha=1.0, p=None,
                  algorithm='best', leaf_size=40,
                  memory=Memory(cachedir=None, verbose=0),
@@ -853,7 +855,7 @@ class HDBSCAN(BaseEstimator, ClusterMixin):
         self._prediction_data = None
         self._relative_validity = None
 
-    def fit(self, X, y=None):
+    def fit(self, X, y=None, sample_weights=None, min_samples=None):
         """Perform HDBSCAN clustering from features or distance matrix.
 
         Parameters
@@ -870,6 +872,15 @@ class HDBSCAN(BaseEstimator, ClusterMixin):
         """
         if self.metric != 'precomputed':
             X = check_array(X, accept_sparse='csr')
+            
+            if sample_weights is not None:
+            sample_weights = np.asarray(sample_weights)
+            check_consistent_length(X, sample_weights)
+            if ~np.issubdtype(sample_weights.dtype, np.integer):
+                # TODO: Only integer weights implemented so far.
+                # Should a warning be raised?
+                sample_weights = sample_weights.astype(np.int64)
+            
             self._raw_data = X
         elif issparse(X):
             # Handle sparse precomputed distance matrices separately
@@ -878,6 +889,8 @@ class HDBSCAN(BaseEstimator, ClusterMixin):
             # Only non-sparse, precomputed distance matrices are allowed
             #   to have numpy.inf values indicating missing distances
             check_precomputed_distance_matrix(X)
+        
+        
 
         kwargs = self.get_params()
         # prediction data only applies to the persistent model, so remove
@@ -890,13 +903,14 @@ class HDBSCAN(BaseEstimator, ClusterMixin):
          self.cluster_persistence_,
          self._condensed_tree,
          self._single_linkage_tree,
-         self._min_spanning_tree) = hdbscan(X, **kwargs)
+         self._min_spanning_tree) = hdbscan(X, sample_weights=sample_weights, **kwargs)
 
         if self.prediction_data:
             self.generate_prediction_data()
 
         return self
-
+    
+    # TODO: Weighting?
     def fit_predict(self, X, y=None):
         """Performs clustering on X and returns cluster labels.
 
