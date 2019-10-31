@@ -876,10 +876,10 @@ class HDBSCAN(BaseEstimator, ClusterMixin):
             if sample_weights is not None:
                 sample_weights = np.asarray(sample_weights)
                 check_consistent_length(X, sample_weights)
-            if ~np.issubdtype(sample_weights.dtype, np.integer):
-                # TODO: Only integer weights implemented so far.
-                # Should a warning be raised?
-                sample_weights = sample_weights.astype(np.int64)
+                if ~np.issubdtype(sample_weights.dtype, np.integer):
+                    # TODO: Only integer weights implemented so far.
+                    # Should a warning be raised?
+                    sample_weights = sample_weights.astype(np.int64)
             
             self._raw_data = X
         elif issparse(X):
