@@ -524,6 +524,7 @@ def all_points_membership_vectors(clusterer):
     :py:func:`hdbscan.predict.predict`
     :py:func:`hdbscan.predict.all_points_membership_vectors`
     """
+    
     clusters = np.array(sorted(list(clusterer.condensed_tree_._select_clusters()))).astype(np.intp)
     all_points = clusterer.prediction_data_.raw_data
 
