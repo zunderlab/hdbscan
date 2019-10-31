@@ -103,7 +103,7 @@ def _rsl_boruvka_kdtree(X, k=5, alpha=1.0,
     min_samples = min(dim - 1, k)
 
     tree = KDTree(X, metric=metric, leaf_size=leaf_size, **kwargs)
-     alg = KDTreeBoruvkaAlgorithm(tree, min_samples=min_samples, metric=metric,
+    alg = KDTreeBoruvkaAlgorithm(tree, min_samples=min_samples, metric=metric,
                                  alpha=alpha, leaf_size=leaf_size, **kwargs)
     min_spanning_tree = alg.spanning_tree()
 
